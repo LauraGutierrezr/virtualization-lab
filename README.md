@@ -71,12 +71,6 @@ Then, build the image:
 docker build -t lauragutierrez12/virtualization-lab:1.0 .
 ```
 
-Verification:
-
-```
-docker images
-```
-
 ## Running with Docker
 
 The application can be run with:
@@ -261,7 +255,6 @@ The image was published using the `1.0` and `latest` tags.
 
 
 
-
 ## Project Status
 
 The application has been tested locally using:
@@ -272,3 +265,422 @@ The application has been tested locally using:
 - MongoDB
 
 The next step is to deploy the application to an EC2 instance and perform the architecture and cost analysis.
+
+## 9.2 Installing Docker on EC2
+
+After connecting to the EC2 instance through SSH, Docker was installed using:
+
+```
+sudo yum update -y
+```
+
+```
+sudo yum install -y docker
+```
+
+```
+sudo service docker start
+```
+
+The EC2 user was added to the Docker group:
+
+```
+sudo usermod -a -G docker ec2-user
+```
+
+After logging out and reconnecting, Docker was verified with:
+
+```
+docker --version
+```
+
+and:
+
+```
+docker ps
+```
+
+<img width="937" height="397" alt="Captura de pantalla 2026-09-23 a la(s) 8 38 58 p m" src="https://github.com/user-attachments/assets/26e7941b-516b-447b-ba4c-d3dd8abde860" />
+
+<img width="1188" height="216" alt="Captura de pantalla 2026-09-23 a la(s) 8 41 21 p m" src="https://github.com/user-attachments/assets/c3f7a5a7-3d42-4de8-a807-b8afd244f0d9" />
+
+
+---
+
+# 10. Deploying the Docker Image to EC2
+
+The Docker image was downloaded directly from Docker Hub:
+
+```
+docker pull lauragutierrez12/virtualization-lab:1.0
+```
+
+The container was then started with:
+
+```
+docker run -d \
+  --name virtualization-lab \
+  --restart unless-stopped \
+  -e PORT=9000 \
+  -p 8080:9000 \
+  lauragutierrez12/virtualization-lab:1.0
+```
+
+The port mapping is:
+
+```
+EC2 host:       8080
+Docker container: 9000
+```
+
+The container status was verified with:
+
+```
+docker ps
+```
+
+The application logs were checked with:
+
+```
+docker logs virtualization-lab
+```
+
+<img width="630" height="155" alt="Captura de pantalla 2026-09-23 a la(s) 8 39 56 p m" src="https://github.com/user-attachments/assets/9ea8095a-0b65-4594-bf31-5cb47854a608" />
+
+
+
+---
+
+# 11. Public AWS Deployment
+
+The deployed application was tested through the public DNS address of the EC2 instance.
+
+Endpoint:
+
+```
+http://ec2-54-226-177-173.compute-1.amazonaws.com:8080/greeting?name=AWS
+```
+
+Expected response:
+
+```
+Hello, AWS!
+```
+
+The successful response confirms the following communication path:
+
+```
+Browser
+  |
+  | HTTP :8080
+  v
+AWS EC2
+  |
+  | Docker port mapping
+  | 8080 -> 9000
+  v
+Spring Boot Container
+  |
+  v
+/greeting
+```
+<img width="684" height="118" alt="Captura de pantalla 2026-09-23 a la(s) 8 43 34 p m" src="https://github.com/user-attachments/assets/7c6da022-0092-4e3b-948e-e6c5f5277683" />
+
+
+<img width="533" height="283" alt="Captura de pantalla 2026-09-23 a la(s) 8 40 21 p m" src="https://github.com/user-attachments/assets/877b94cf-2091-4d57-bd76-f52f359c80d9" />
+
+<img width="804" height="286" alt="Captura de pantalla 2026-09-23 a la(s) 8 40 56 p m" src="https://github.com/user-attachments/assets/d2206eca-8981-466f-8d9a-263da6a0a3ad" />
+
+---
+
+# 12. Deployment Architecture
+
+The final deployment model is:
+
+```
+                 Internet
+                   |
+                   |
+                HTTP :8080
+                   |
+                   v
+           +----------------------+
+           |       AWS EC2        |
+           |     t3.micro         |
+           |  Amazon Linux 2023   |
+           |                      |
+           |  +----------------+  |
+           |  | Docker Engine   |  |
+           |  |                |  |
+           |  | Spring Boot    |  |
+           |  | Web Container  |  |
+           |  |     :9000      |  |
+           |  +----------------+  |
+           +----------------------+
+                   |
+                   |
+                Docker runtime
+```
+
+For the local environment, Docker Compose provides the following architecture:
+
+```
+              Local Machine
+                 |
+            Docker Compose
+                 |
+         +-----------+-----------+
+         |                       |
+         v                       v
+    +-------------+         +-------------+
+    | Spring Boot |         |  MongoDB    |
+    |    web      |         |     db      |
+    |    :9000    |         |   :27017    |
+    +-------------+         +-------------+
+         |
+         |
+      Host :8087
+```
+
+---
+
+# 13. Architecture Responsibilities
+
+## Client
+
+The client sends HTTP requests to the public EC2 endpoint.
+
+Example:
+
+```
+/greeting?name=AWS
+```
+
+## EC2
+
+Amazon EC2 provides the virtual machine where Docker is executed.
+
+It provides:
+
+- Compute resources.
+- Network connectivity.
+- Public access through the configured security group.
+- Storage through EBS.
+
+## Security Group
+
+The Security Group controls inbound network access.
+
+The deployment allows:
+
+```
+TCP 22   -> SSH administration
+TCP 8080 -> Web application
+```
+
+Other unnecessary ports are not exposed.
+
+## Docker
+
+Docker provides the container runtime used to isolate and execute the Spring Boot application.
+
+## Spring Boot
+
+The Spring Boot application processes HTTP requests and returns the greeting response.
+
+---
+
+# 14. Cost Analysis
+
+The cost analysis considers a single continuously running EC2 instance and three monthly request scenarios:
+
+```
+10,000 requests/month
+100,000 requests/month
+1,000,000 requests/month
+```
+
+## Assumptions
+
+For the baseline calculation:
+
+| Parameter | Assumption |
+|---|---|
+| AWS Region | US East (N. Virginia), us-east-1 |
+| EC2 instance | t3.micro |
+| Instances | 1 |
+| Runtime | 730 hours/month |
+| EBS | 8 GiB gp3 |
+| Public IPv4 | 1 |
+| Application | Single Docker container |
+| Load balancer | Not included |
+| Managed database | Not included |
+| Monitoring | Not included |
+| Backups | Not included |
+| Data transfer | Assumed low enough not to materially change this baseline |
+| Availability | Single instance, no high availability |
+
+The EC2 t3.micro on-demand example for `us-east-1` is approximately `$0.0104/hour`. AWS documentation also lists gp3 storage at approximately `$0.08/GiB-month` for the referenced US East pricing example. Public IPv4 addresses are charged separately at `$0.005/hour` when applicable. These values should be cross-checked with the AWS Pricing Calculator at the time of submission.
+
+### Baseline monthly estimate
+
+EC2 compute:
+
+```
+$0.0104 × 730 hours
+= $7.592/month
+```
+
+8 GiB gp3 EBS:
+
+```
+$0.08 × 8 GiB
+= $0.64/month
+```
+
+One public IPv4 address:
+
+```
+$0.005 × 730 hours
+= $3.65/month
+```
+
+Estimated infrastructure baseline:
+
+```
+$7.592 + $0.64 + $3.65
+= $11.882/month
+```
+
+Rounded:
+
+```
+≈ $11.88/month
+```
+
+This is an illustrative baseline and does not include account-specific Free Tier credits, taxes, additional AWS services, significant data transfer, or other charges.
+
+## Cost per Request
+
+The workshop formula is:
+
+```
+Cost per request =
+Monthly infrastructure cost / Monthly requests
+```
+
+Using the estimated baseline of approximately `$11.88/month`:
+
+| Monthly Requests | Estimated Monthly Infrastructure Cost | Approx. Cost per Request |
+|---:|---:|---:|
+| 10,000 | $11.88 | $0.001188 |
+| 100,000 | $11.88 | $0.0001188 |
+| 1,000,000 | $11.88 | $0.00001188 |
+
+The important characteristic of this calculation is that the basic EC2 infrastructure cost is largely independent of the number of requests while the instance remains running continuously. Therefore, the infrastructure cost per request decreases as the request volume increases.
+
+The final submitted cost analysis should include the screenshot or exported result from the AWS Pricing Calculator.
+
+---
+
+# 15. Cost Analysis Discussion
+
+## Why is there a baseline monthly cost even with very few requests?
+
+The EC2 instance consumes infrastructure resources while it is running. The application can receive very few requests and still incur compute, storage, and potentially public IPv4 costs.
+
+Therefore, a continuously running virtual machine has a relatively fixed infrastructure component.
+
+## Why does the cost per request decrease as traffic increases?
+
+The same running infrastructure can process many requests.
+
+For example, if the monthly infrastructure cost remains approximately constant:
+
+```
+10,000 requests
+      |
+      v
+Higher cost per request
+```
+
+while:
+
+```
+1,000,000 requests
+      |
+      v
+Lower cost per request
+```
+
+The infrastructure is being utilized by a larger number of requests.
+
+## What would require multiple EC2 instances?
+
+Multiple instances may be required when a single instance is no longer sufficient for the workload or when the architecture requires higher availability.
+
+Possible reasons include:
+
+- Increased CPU utilization.
+- Increased memory consumption.
+- Higher concurrent request volume.
+- Need for horizontal scaling.
+- High availability requirements.
+- Fault tolerance.
+- Maintenance without taking the service completely offline.
+
+## What additional services would normally be considered in production?
+
+A production architecture could require additional services such as:
+
+- Load balancer.
+- Multiple EC2 instances.
+- Auto Scaling.
+- Managed database.
+- Monitoring and logging.
+- Backups.
+- Container registry.
+- HTTPS/TLS.
+- DNS.
+- Network security controls.
+
+These services would increase the total infrastructure cost.
+
+## Would serverless necessarily be cheaper?
+
+The answer depends on the workload.
+
+For workloads with low or intermittent traffic, a serverless architecture may avoid paying for an always-running virtual machine because resources can be consumed based on executions.
+
+For continuously active workloads, the economics can be different because a continuously running EC2 instance spreads its fixed infrastructure cost across a larger number of requests.
+
+Therefore, the appropriate architecture depends on workload characteristics such as:
+
+- Request frequency.
+- Execution duration.
+- Resource consumption.
+- Traffic variability.
+- Availability requirements.
+- Operational requirements.
+
+---
+
+
+## Public Deployment
+
+Evidence of the browser response:
+
+```
+Hello, AWS!
+```
+
+from the EC2 public endpoint.
+
+<img width="795" height="221" alt="Captura de pantalla 2026-09-23 a la(s) 8 42 12 p m" src="https://github.com/user-attachments/assets/26e79ed7-7254-4807-887f-2b2c03bce42f" />
+
+<img width="1160" height="214" alt="Captura de pantalla 2026-09-23 a la(s) 8 42 31 p m" src="https://github.com/user-attachments/assets/1cddfc8a-75cd-46df-96fd-f88393adf20b" />
+
+
+## Architecture
+
+Evidence of the deployment model diagram.
